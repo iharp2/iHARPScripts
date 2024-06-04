@@ -57,14 +57,14 @@ class iHARPExecuter:
         east: float,
         spatial_resolution: float,  # e.g., 0.25, 0.5, 1.0, 2.5, 5.0
         spatial_agg_method: str,  # e.g., "mean", "max", "min"
-    ) -> xr.Dataset:
+    ):
 
         (
             self.min_lat,
             self.max_lat,
             self.min_lon,
             self.max_lon,
-            self.temporalLevel,
+            self.time_resolution,
             self.time_agg_method,
             self.variable,
         ) = (
@@ -90,7 +90,6 @@ class iHARPExecuter:
         self.extract_date_time_info(self.startDateTime, self.endDateTime)
         start_date_counter = datetime.strptime(self.startDateTime, "%Y-%m-%dT%H")
         end_date_counter = datetime.strptime(self.endDateTime, "%Y-%m-%dT%H")
-
         if self.time_resolution == "Hourly":
             # CASE #1: Requested hours in more than more than one year #This is EXPENSIVE CASE
             if str(self.selected_year_start) != str(self.selected_year_end):
@@ -166,6 +165,7 @@ class iHARPExecuter:
                 + "/"
                 + "combined_"
                 + str(self.time_resolution).lower()
+                + "_"
                 + str(self.time_agg_method)
                 + "_2014_2023.nc"
             )
@@ -177,8 +177,9 @@ class iHARPExecuter:
 
         if self.spatial_resolution != 0.25:
             coarsened = ds.coarsen(
-                latitude=self.spatial_resolution / 0.25,
-                longitude=self.spatial_resolution / 0.25,
+                latitude=int(self.spatial_resolution / 0.25),
+                longitude=int(self.spatial_resolution / 0.25),
+                boundary="trim",
             )
             if self.spatial_agg_method == "mean":
                 ds = coarsened.mean()
