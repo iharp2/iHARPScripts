@@ -11,7 +11,7 @@ class iHARPExecuter():
         self.frames_directory = os.path.join(self.current_directory, 'assets/frames')
         self.min_lat,self.max_lat,self.min_lon,self.max_lon = -90,90,-180,180
     #This function is used in plotting
-    def extract_date_time_info(self,start_date_time_str, end_date_time_str):
+    def extractDateTimeInfo(self,start_date_time_str, end_date_time_str):
         # Parse start date-time string
         start_date_time = datetime.fromisoformat(start_date_time_str.rstrip("Z"))
         # Parse end date-time string
@@ -52,10 +52,10 @@ class iHARPExecuter():
             self.max_lat, self.min_lat = self.min_lat, self.max_lat
         self.lon_range,self.lat_range = slice(self.min_lon, self.max_lon),slice(self.max_lat, self.min_lat) 
         self.startDateTime,self.endDateTime= start_datetime[:-11],end_datetime[:-11]
-        self.extract_date_time_info(self.startDateTime,self.endDateTime) 
         start_date_counter = datetime.strptime(self.startDateTime, "%Y-%m-%dT%H")
         end_date_counter = datetime.strptime(self.endDateTime, "%Y-%m-%dT%H")
-
+        self.selected_year_start,self.selected_year_end  = start_date_counter.strftime("%Y"),end_date_counter.strftime("%Y")
+        print(self.selected_year_start,self.selected_year_end )
         if self.time_resolution=="Hourly":
             #CASE #1: Requested hours in more than more than one year #This is EXPENSIVE CASE
             if (str(self.selected_year_start) != str(self.selected_year_end)) :
