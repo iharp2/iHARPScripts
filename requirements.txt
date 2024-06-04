@@ -1,6 +1,4 @@
 xarray
 h5netcdf
-datetime
+netcdf4
 jupyter
-os
-calendar
