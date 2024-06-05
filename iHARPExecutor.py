@@ -49,7 +49,7 @@ class iHARPExecuter:
         variable: str,
         start_datetime: str,
         end_datetime: str,
-        time_resolution: str,  # e.g., "hour", "day", "month", "year"
+        time_resolution: str,  # e.g., "Hourly", "Daily", "Monthly", "Yearly"
         time_agg_method: str,  # e.g., "mean", "max", "min"
         south: float,
         north: float,
@@ -88,49 +88,11 @@ class iHARPExecuter:
         )
         self.startDateTime, self.endDateTime = start_datetime[:-11], end_datetime[:-11]
         self.extract_date_time_info(self.startDateTime, self.endDateTime)
-        start_date_counter = datetime.strptime(self.startDateTime, "%Y-%m-%dT%H")
-        end_date_counter = datetime.strptime(self.endDateTime, "%Y-%m-%dT%H")
         if self.time_resolution == "Hourly":
-            # CASE #1: Requested hours in more than more than one year #This is EXPENSIVE CASE
-            if str(self.selected_year_start) != str(self.selected_year_end):
-                ds_list = []
-                current_date = start_date_counter
-                while current_date <= end_date_counter:
-                    data_location = (
-                        self.dataDirectory
-                        + "raw/"
-                        + self.variable
-                        + "/"
-                        + self.variable
-                        + "-"
-                        + str(current_date.year)
-                        + ".nc"
-                    )
-                    # For the first year, retrieve data from selected start datetime till the end of the year
-                    if current_date.year == self.selected_year_start:
-                        ds = xr.open_dataset(data_location, engine="netcdf4").sel(
-                            time=slice(self.startDateTime, None),
-                            longitude=self.lon_range,
-                            latitude=self.lat_range,
-                        )
-                    # For the last year, retrieve data from selected start datetime till the end of the year
-                    elif current_date.year == self.selected_year_end:
-                        ds = xr.open_dataset(data_location, engine="netcdf4").sel(
-                            time=slice(None, self.endDateTime),
-                            longitude=self.lon_range,
-                            latitude=self.lat_range,
-                        )
-                    # For all years between get all hours in thos years
-                    else:
-                        ds = xr.open_dataset(data_location, engine="netcdf4").sel(
-                            longitude=self.lon_range, latitude=self.lat_range
-                        )
-                        ds_list.append(ds)
-                    current_date += timedelta(years=1)
-                ds = xr.concat(ds_list, dim="time")
-
-            # CASE #2 Requested range of hours in one year
-            else:
+            ds_list = []
+            for year in range(
+                int(self.selected_year_start), int(self.selected_year_end) + 1
+            ):
                 data_location = (
                     self.dataDirectory
                     + "raw/"
@@ -138,7 +100,7 @@ class iHARPExecuter:
                     + "/"
                     + self.variable
                     + "-"
-                    + str(self.selected_year_start)
+                    + str(year)
                     + ".nc"
                 )
                 ds = xr.open_dataset(data_location, engine="netcdf4").sel(
@@ -146,18 +108,10 @@ class iHARPExecuter:
                     longitude=self.lon_range,
                     latitude=self.lat_range,
                 )
+                ds_list.append(ds)
+            ds = xr.concat(ds_list, dim="time")
 
         else:
-            print(
-                self.dataDirectory
-                + "preprocessed/"
-                + self.variable
-                + "/"
-                + "combined_"
-                + str(self.time_resolution).lower()
-                + str(self.time_agg_method)
-                + "_2014_2023.nc"
-            )
             data_location = (
                 self.dataDirectory
                 + "preprocessed/"
@@ -169,6 +123,7 @@ class iHARPExecuter:
                 + str(self.time_agg_method)
                 + "_2014_2023.nc"
             )
+            print(data_location)
             ds = xr.open_dataset(data_location).sel(
                 time=slice(self.startDateTime, self.endDateTime),
                 longitude=self.lon_range,
