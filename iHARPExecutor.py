@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta
 
+import numpy as np
 import xarray as xr
 
 
@@ -44,7 +45,7 @@ class iHARPExecuter:
         self.selected_year_end = end_date_time.strftime("%Y")
         return
 
-    def getRaster(
+    def getRaster_old(
         self,
         variable: str,
         start_datetime: str,
@@ -191,8 +192,107 @@ class iHARPExecuter:
 
         return self.raster
 
-    def viewTimeSeries(self, raster: xr.Dataset):
+    def checkDataSupportance(
+        self
+    ):
+        if self.variable == "t2m":
+            return True
+        if self.variable == "tp":
+            if self.time_resolution == "hourly" and int(self.selected_year_start) < 2019:
+                return False
+            return True
+        if self.variable == "sp":
+            if self.time_resolution == "hourly":
+                return False
+            else:  # time_resolution == "daily", "monthly", "yearly"
+                if self.min_lat >= 30:  # part 1: lat [90, 30]
+                    return True
+                elif self.max_lat <= 30:  # part 2: lat [30, -90]
+                    if float(self.spatial_resolution) >= 1:
+                        return True
+                    else:
+                        return False
+                else:  # Deny inter-spatial-partition query for now
+                    return False
 
+    def genFileList(self):
+        if self.variable == "t2m" or self.variable == "tp":
+            if self.time_resolution == "hourly":
+                return [
+                    f"/data/era5/raw/{self.variable}/{self.variable}-{year}.nc"
+                    for year in range(int(self.selected_year_start), int(self.selected_year_end)+1)
+                ]
+            else:
+                return [
+                    f"/data/era5/preprocessed/{self.variable}/combined_{self.time_resolution}_{self.time_agg_method}_2014_2023.nc"
+                ]
+        if self.variable == "sp":
+            if self.min_lat >= 30:  # part 1: lat [90, 30]
+                return [
+                    f"/data/era5/preprocessed/{self.variable}/combined_{self.time_resolution}_{self.time_agg_method}_2014_2023_part1.nc"
+                ]
+            elif self.max_lat <= 30:  # part 2: lat [30, -90]
+                return [
+                    f"/data/era5/preprocessed/{self.variable}/combined_{self.time_resolution}_{self.time_agg_method}_2014_2023_part2.nc"
+                ]
+            else:
+                raise ValueError("iHARPV: Inter-spatial-partition query is not supported yet.")
+
+    def spatial_resample(self, ds):
+        return ds.sel(
+            latitude=np.arange(
+                self.max_lat, self.min_lat, -self.spatial_resolution
+            ),
+            longitude=np.arange(
+                self.min_lon, self.max_lon, self.spatial_resolution
+            ),
+            method="nearest",
+        )
+
+    def getRaster(
+        self,
+        variable: str,
+        start_datetime: str,
+        end_datetime: str,
+        time_resolution: str,  # e.g., "hour", "day", "month", "year"
+        time_agg_method: str,  # e.g., "mean", "max", "min"
+        south: float,
+        north: float,
+        west: float,
+        east: float,
+        spatial_resolution: float,  # e.g., 0.25, 0.5, 1.0, 2.5, 5.0
+    ):
+        self.variable = variable
+        self.startDateTime, self.endDateTime = start_datetime[:-11], end_datetime[:-11]
+        self.extract_date_time_info(self.startDateTime, self.endDateTime)
+        self.time_resolution, self.time_agg_method = time_resolution, time_agg_method
+        self.min_lat = south
+        self.max_lat = north
+        self.min_lon = west
+        self.max_lon = east
+        self.spatial_resolution = spatial_resolution
+
+        if not self.checkDataSupportance():
+            raise ValueError("iHARPV: Query range or resolution not supported")
+        
+        file_list = self.genFileList()
+        ds_list = []
+        for file in file_list:
+            ds = xr.open_dataset(file, engine="netcdf4").sel(
+                time=slice(self.startDateTime, self.endDateTime),
+                latitude=slice(self.max_lat, self.min_lat),
+                longitude=slice(self.min_lon, self.max_lon),
+            )
+            ds_list.append(ds)
+        ds = xr.concat(ds_list, dim="time")
+
+        if self.spatial_resolution != 0.25: ds = self.spatial_resample(ds)
+
+        self.raster = ds
+        return self.raster
+
+
+    def viewTimeSeries(self, raster: xr.Dataset):
         pass
 
     def viewHeatMap(self, raster: xr.Dataset):
