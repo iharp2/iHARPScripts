@@ -238,7 +238,7 @@ class iHARPExecuter:
             else:
                 raise ValueError("iHARPV: Inter-spatial-partition query is not supported yet.")
 
-    def spatial_resample(self, ds):
+    def spatialDownsample(self, ds):
         return ds.sel(
             latitude=np.arange(
                 self.max_lat, self.min_lat, -self.spatial_resolution
@@ -286,7 +286,7 @@ class iHARPExecuter:
             ds_list.append(ds)
         ds = xr.concat(ds_list, dim="time")
 
-        if self.spatial_resolution != 0.25: ds = self.spatial_resample(ds)
+        if self.spatial_resolution != 0.25: ds = self.spatialDownsample(ds)
 
         self.raster = ds
         return self.raster
