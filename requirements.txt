@@ -2,3 +2,6 @@ xarray
 h5netcdf
 netcdf4
 jupyter
+calendar
+numpy
+nbformat
