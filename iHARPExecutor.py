@@ -387,10 +387,7 @@ class iHARPExecuter:
                 os.remove(file_path_full)
         for time_step in raster.time:
             self.HeatMapTemps.append(raster[self.variable].sel(time=time_step))
-        # TODO: We need to figure out how to update the progress bar
-        # update_progress(75,'Retrieving Time Series..Progress:')
         counter = 0
-        total = len(self.HeatMapTemps)
         index = -1
         self.variable_unit = self.HeatMapTemps[0].attrs.get(
             "units", "No unit attribute found"
