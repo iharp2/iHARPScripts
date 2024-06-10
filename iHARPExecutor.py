@@ -243,6 +243,14 @@ class iHARPExecuter:
         ytitle = str(self.variable_long_name + " [" + self.variable_unit + "]")
         # Naming the xtitle and title of the figure depends on teh time_resolution
         if self.time_resolution == "hourly":
+            if self.selected_day_start != self.selected_hour_end:
+                day = (
+                    "("
+                    + str(self.selected_day_start)
+                    + "~"
+                    + str(self.selected_day_end)
+                    + ")"
+                )
             xtitle = self.time_resolution
             title = (
                 self.time_agg_method
@@ -326,7 +334,7 @@ class iHARPExecuter:
         )
         fig.update_layout(
             plot_bgcolor="white",
-            xaxis_tickformat="%m-%d H:%H",
+            xaxis_tickformat="%m-%d<br>H:%H",
             # xaxis_rangeslider_visible=True,
             title=dict(
                 text=title,
@@ -369,7 +377,116 @@ class iHARPExecuter:
         return data
 
     def viewHeatMap(self, raster: xr.Dataset):
-        pass
+        videoPath = os.path.join(self.current_directory, "assets/heatmapVideo.mp4")
+        self.HeatMapTemps = []
+        for file_name in os.listdir(self.frames_directory):
+            # print(file_name)
+            if file_name.endswith(".png"):
+                file_path_full = os.path.join(self.frames_directory, file_name)
+                # print(file_path_full)
+                os.remove(file_path_full)
+        for time_step in raster.time:
+            self.HeatMapTemps.append(raster[self.variable].sel(time=time_step))
+        # TODO: We need to figure out how to update the progress bar
+        # update_progress(75,'Retrieving Time Series..Progress:')
+        counter = 0
+        total = len(self.HeatMapTemps)
+        index = -1
+        self.variable_unit = self.HeatMapTemps[0].attrs.get(
+            "units", "No unit attribute found"
+        )
+        self.variable_long_name = self.HeatMapTemps[0].attrs.get(
+            "long_name", "No long name attribute found"
+        )
+        for data in self.HeatMapTemps:
+            index += 1
+            time_step = data.time
+            hour = time_step.dt.hour.item()
+            hour_am_pm = datetime.strptime(str(hour), "%H").strftime("%I %p")
+
+            month = time_step.values.astype("M8[M]").astype("O").month
+            month_name = calendar.month_name[month]
+            day = time_step.values.astype("M8[D]").astype("O").day
+            year = time_step.dt.year.item()
+            fig, ax = plt.subplots(figsize=(20, 14))
+            ax.set_xlabel("Longitude")
+            ax.set_ylabel("Latitude")
+            if self.time_resolution == "hourly":
+                data.plot.imshow(
+                    label=f"{self.variable_long_name} of {str(month_name)}  {str(day)} at : {hour_am_pm}",
+                    ax=ax,
+                )
+                ax.set_title(
+                    f"{self.time_resolution} {self.variable_long_name} Variation - {str(month_name)+ str(day)} at : {hour_am_pm}"
+                )
+
+            elif self.time_resolution == "daily":
+                data.plot.imshow(
+                    label=f"{self.variable_long_name} of {str(month_name)+str(day)} at : {hour_am_pm}",
+                    ax=ax,
+                )
+                ax.set_title(
+                    f"{self.time_resolution} {self.time_agg_method} {self.variable_long_name} Variation - on {str(month_name)} - {str(day)}"
+                )
+            elif self.time_resolution == "monthly":
+                data.plot.imshow(
+                    label=f"{self.variable_long_name} of {str(month_name)+str(year)}",
+                    ax=ax,
+                )
+                ax.set_title(
+                    f"{self.time_resolution} {self.time_agg_method} {self.variable_long_name} Variation - on {str(month_name)} - {str(year)}"
+                )
+            elif self.time_resolution == "yearly":
+                data.plot.imshow(
+                    label=f"{self.variable_long_name} of {str(year)}", ax=ax
+                )
+                ax.set_title(
+                    f"{self.time_resolution} {self.time_agg_method} {self.variable_long_name} Variation - on {str(year)}"
+                )
+
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.spines["bottom"].set_visible(False)
+            ax.spines["left"].set_visible(False)
+            ax.tick_params(
+                axis="both",
+                which="both",
+                bottom=False,
+                top=False,
+                left=False,
+                right=False,
+            )
+            ax.grid(True, linestyle="--", alpha=0.2)  # Add grid lines
+
+            # Adjust margins
+            plt.subplots_adjust(
+                left=0.05, right=1.08, top=0.97, bottom=0.08
+            )  # Adjust as needed
+
+            # Save the plo t
+            output_file = self.frames_directory + f"/{counter}.png"
+            counter += 1
+            plt.savefig(output_file)
+            plt.close(fig)  # Close the figure to free up memory
+        # Create a video file from the images
+        os.system(
+            f'ffmpeg -framerate 2 -start_number 0 -i  "{self.frames_directory}/%d.png" -c:v libx264 -r 30 "{videoPath}" -y'
+        )
+
+        # Open the image file
+        with open(videoPath, "rb") as f:
+            video_data = f.read()
+
+        video_file_bytes = BytesIO(video_data)
+        # After you send the video go and delete all frames
+        for file_name in os.listdir(self.frames_directory):
+            # print(file_name)
+            if file_name.endswith(".png"):
+                file_path_full = os.path.join(self.frames_directory, file_name)
+                # print(file_path_full)
+                os.remove(file_path_full)
+        # Return the response as JSON
+        return video_file_bytes
 
     def findArea(
         self,
