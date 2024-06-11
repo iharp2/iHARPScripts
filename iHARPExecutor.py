@@ -30,6 +30,8 @@ import matplotlib.dates as mdates
 import plotly.graph_objs as go
 import plotly.io as pio
 from dateutil.relativedelta import relativedelta
+import operator
+
 from base64 import b64encode
 
 try:
@@ -492,14 +494,135 @@ class iHARPExecuter:
         predicate: str,  # e.g., ">", "<", "==", "!=", ">=", "<="
         value: float,
     ) -> xr.Dataset:
-        """
-        add a new variable spatial_mask(lat, lon) to the dataset
-        E.g.,
-        dimensions: time, lat, lon
-        variable: t2m(time, lat, lon)      (24, 721, 1440) --agg-> (721, 1440)
-                  spatial_mask(lat, lon)   (721, 1440): boolean mask
-        """
-        pass
+        json_file_path = os.path.join(self.current_directory, "assets/areasData.json")
+        # Assume the surface pressure variable is named 'sp'
+        # Dictionary mapping operator strings to their corresponding functions
+        operator_mapping = {
+            ">": operator.gt,
+            "<": operator.lt,
+            "=": operator.eq,  # Note that in Python, '==' is used for equality check
+            "<=": operator.le,
+            ">=": operator.ge,
+            "!=": operator.ne,
+        }
+        # Aggregate over time dimension
+        op_func = operator_mapping[predicate]
+        variable = raster[self.variable]
+        if agg_method == "any":
+            # Apply the condition across all raster tables
+            condition_test = op_func(variable, value)
+            condition_met = (
+                raster.where(condition_test)[self.variable]
+                .notnull()
+                .any(dim="time")
+                .astype(bool)
+            )
+            var2 = raster[self.variable].isel(time=0)
+
+        else:
+            condition_test = op_func(variable, value)
+            condition_met = (
+                raster.where(condition_test)[self.variable]
+                .notnull()
+                .all(dim="time")
+                .astype(bool)
+            )
+            var2 = raster[self.variable].isel(time=0)
+
+        variable_df = var2.to_dataframe().reset_index()
+        condition_met_df = condition_met.to_dataframe(
+            name="condition_met"
+        ).reset_index()
+        # Merge the two DataFrames
+        filtered_df = pd.merge(
+            variable_df, condition_met_df, on=["latitude", "longitude"]
+        )
+        # Just send to the user the first 1000 values if it's more than this
+        # Ensure that 'latitude' and 'longitude' are the coordinate names
+        filtered_df = filtered_df.rename(columns={self.variable: "variable"})
+        df_sliced_json = filtered_df.head(2000).to_dict("records")
+        df = filtered_df
+        df["latitude"] = df["latitude"] - 1
+        df["longitude"] = df["longitude"] - 1
+        df["latitude2"] = df["latitude"] + 2
+        df["longitude2"] = df["longitude"] + 2
+        gdf = gpd.GeoDataFrame(
+            df,
+            geometry=[
+                Polygon([(x, y), (x, y2), (x2, y2), (x2, y)])
+                for x, y, x2, y2 in zip(
+                    df["longitude"], df["latitude"], df["longitude2"], df["latitude2"]
+                )
+            ],
+        )
+        color_mapping = {True: "blue", False: "red"}
+
+        fig = px.choropleth_mapbox(
+            gdf,
+            color_continuous_scale="Viridis",
+            geojson=gdf.geometry,
+            locations=gdf.index,
+            hover_data={"condition_met": True, "variable": True},
+            color="condition_met",
+            mapbox_style="white-bg",
+            center={"lat": gdf["latitude"].mean(), "lon": gdf["longitude"].mean()},
+            opacity=0.5,
+            zoom=1,
+            color_discrete_map=color_mapping,
+        )
+        # fig.update_traces(
+        #     hovertemplate="<b>Condition Met:</b> %{customdata[0]}<br><b>Variable:</b> %{customdata[1]}",
+        #     customdata=gdf[
+        #         ["condition_met", "variable"]
+        #     ].values,  # Specify columns for customdata
+        # )
+
+        fig.update_layout(
+            mapbox_style="white-bg",
+            mapbox_layers=[
+                {
+                    "below": "traces",
+                    "sourcetype": "raster",
+                    "sourceattribution": "United States Geological Survey",
+                    "source": [
+                        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                    ],
+                }
+            ],
+            modebar_remove=[
+                "toImage",
+                "pan",
+                "zoomIn",
+                "zoomOut",
+                "resetViewMapbox",
+                "lasso2d",
+                "select",
+            ],
+            # displaylogo=False,  # Hide the Plotly logo
+            margin={"r": 0, "t": 0, "l": 0, "b": 0},
+            showlegend=True,
+            legend=dict(
+                font=dict(size=7),
+                x=1,  # Adjust the x position (0 to 1, 1 is far right)
+                y=1,  # Adjust the y position (0 to 1, 1 is top)
+                xanchor="right",  # Anchors the legend's x position
+                yanchor="top",  # Anchors the legend's y position
+            ),
+        )
+
+        fig_json = fig.to_json()
+        with open(json_file_path, "w") as f:
+            f.write(fig_json)
+        # Read the JSON file
+        with open(json_file_path, "r") as json_file:
+            data = json.load(json_file)
+        # Combine the two JSON objects into one dictionary
+        # df_sliced_json = filtered_df.head(100).to_json(orient="records")
+
+        combined_data = {"plotlyData": data, "dfData": df_sliced_json}
+        # print(df_sliced_json)
+        fig = ""
+        return combined_data
 
     def findTime(
         self,
@@ -508,12 +631,180 @@ class iHARPExecuter:
         predicate: str,  # e.g., ">", "<", "==", "!=", ">=", "<="
         value: float,
     ) -> xr.Dataset:
-        """
-        add a new variable time_mask(time) to the dataset
-        E.g.,
-        dimensions: time, lat, lon
-        variable: t2m(time, lat, lon)   (24, 721, 1440) --agg-> (24)
-                  temporal_mask(time)   (24) : (true, true, false, ...)
+        json_file_path = os.path.join(self.current_directory, "assets/timesData.json")
+        # Assume the surface pressure variable is named 'sp'
+        # Dictionary mapping operator strings to their corresponding functions
+        operator_mapping = {
+            ">": operator.gt,
+            "<": operator.lt,
+            "=": operator.eq,  # Note that in Python, '==' is used for equality check
+            "<=": operator.le,
+            ">=": operator.ge,
+            "!=": operator.ne,
+        }
+        # Aggregate over time dimension
+        op_func = operator_mapping[predicate]
+        variable = raster[self.variable]
+        mytime = raster.time.values
+        print(mytime)
+        if agg_method == "any":
+            # Apply the condition across all raster tables
+            condition_test = op_func(variable, value)
+            condition_met = (
+                raster.where(condition_test)[self.variable]
+                .notnull()
+                .any(dim=["latitude", "longitude"])
+                .astype(bool)
+            )
+            var2 = raster[self.variable].isel(time=0)
+            print(condition_met.values)
+            # print(var2)
+        else:
+            condition_test = op_func(variable, value)
+            condition_met = (
+                raster.where(condition_test)[self.variable]
+                .notnull()
+                .all(dim=["latitude", "longitude"])
+                .astype(bool)
+            )
+            var2 = raster[self.variable].isel(time=0)
+        # Create a boolean mask indicating whether each value meets the condition
+        # print(condition_met)
+        # Convert the DataArray and mask to DataFrames
+        column_names = ["time"]
 
-        """
-        pass
+        time_df = pd.DataFrame(mytime, columns=column_names)
+        condition_met_df = condition_met.to_dataframe(
+            name="condition_met"
+        ).reset_index()
+        # Merge the two DataFrames
+        filtered_df = pd.merge(time_df, condition_met_df, on=["time"])
+        print(filtered_df)
+        # Just send to the user the first 1000 values if it's more than this
+        # Ensure that 'latitude' and 'longitude' are the coordinate names
+        # filtered_df = filtered_df.rename(columns={self.variable: "variable"})
+        df_sliced_json = filtered_df.head(2000).to_dict("records")
+        # Convert time_series to pandas datetime format
+        time_series = pd.to_datetime(filtered_df["time"])
+        # variable_values = filtered_df["variable"]
+        condition_met = filtered_df["condition_met"]
+        # print(time_series)
+        # print(variable_df)
+        # print(condition_met_df)
+        # Create figure
+        fig = go.Figure()
+        fig.update_xaxes(
+            mirror=True,
+            ticks="outside",
+            showline=True,
+            linecolor="black",
+            gridcolor="lightgrey",
+        )
+        fig.update_yaxes(
+            mirror=True,
+            ticks="outside",
+            showline=True,
+            linecolor="black",
+            gridcolor="lightgrey",
+        )
+        # Add condition met bar plot for True
+        fig.add_trace(
+            go.Bar(
+                x=time_series,
+                y=[1 if c else 0 for c in condition_met],  # 1 for True, 0 for False
+                name="Condition (T)",
+                marker=dict(
+                    color="rgba(0, 0, 255, 0.7)"
+                ),  # Light blue color with opacity
+                yaxis="y2",  # Use a secondary y-axis for the bar chart
+                opacity=0.9,  # Set opacity to make bars more opaque
+            )
+        )
+
+        # Add condition met bar plot for False
+        fig.add_trace(
+            go.Bar(
+                x=time_series,
+                y=[1 if not c else 0 for c in condition_met],  # 1 for False, 0 for True
+                name="Condition (F)",
+                marker=dict(
+                    color="rgba(255, 0, 0, 0.7)"
+                ),  # Light red color with opacity
+                yaxis="y2",  # Use a secondary y-axis for the bar chart
+                opacity=0.9,  # Set opacity to make bars more opaque
+            )
+        )
+
+        # Add time series line plot
+        # fig.add_trace(
+        #     go.Scatter(
+        #         x=time_series,
+        #         y=variable_values,
+        #         mode="lines+markers",
+        #         name="Var Values",
+        #         marker=dict(
+        #             color="black", opacity=0.8
+        #         ),  # Set color and full opacity for scatter plot
+        #     )
+        # )
+
+        # Update layout to include secondary y-axis
+        fig.update_layout(
+            plot_bgcolor="white",
+            xaxis_tickformat="%m-%d<br>H:%H",
+            # xaxis_rangeslider_visible=True,
+            title=dict(
+                text="Find Times Result",
+                font=dict(size=15, color="black", weight="bold"),
+                x=0.5,
+            ),
+            xaxis_title=dict(text="Time", font=dict(size=12)),
+            # yaxis_title=dict(text="Variable Values", font=dict(size=12)),
+            yaxis=dict(
+                title="Condition",
+                overlaying="y",  # Overlay the second y-axis on the same x-axis
+                side="right",  # Display the second y-axis on the right
+                range=[0, 1],  # Limit the range to 0-1 for boolean values
+                tickvals=[0, 1],  # Only show 0 and 1 on the y-axis
+                ticktext=["False", "True"],  # Display text labels for the y-axis
+            ),
+            legend=dict(
+                x=0,  # Position legend at the top-left corner
+                y=1.35,
+                bordercolor="Black",
+                borderwidth=0.0,
+                font=dict(size=10),
+                xanchor="right",  # Anchors the legend's x position
+                yanchor="top",  # Anchors the legend's y position
+            ),
+            modebar_remove=[
+                # "toImage",
+                "pan",
+                "zoomIn",
+                "zoomOut",
+                "resetViewMapbox",
+                "lasso2d",
+                "select",
+                "zoom",
+                "autoScale",
+                # "resetScale",
+            ],
+            # margin={"r": 10, "t": 40, "b": 15, "l": 50},
+            margin={"r": 70, "t": 40, "b": 0, "l": 50},
+            showlegend=True,
+            height=300,
+            width=750,
+        )
+        fig_json = fig.to_json()
+        with open(json_file_path, "w") as f:
+            f.write(fig_json)
+        # Read the JSON file
+        with open(json_file_path, "r") as json_file:
+            data = json.load(json_file)
+        # Combine the two JSON objects into one dictionary
+        # df_sliced_json = filtered_df.head(100).to_json(orient="records")
+
+        combined_data = {"plotlyData": data, "dfData": df_sliced_json}
+        # print(df_sliced_json)
+        fig = ""
+        return combined_data
