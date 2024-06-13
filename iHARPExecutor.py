@@ -349,7 +349,7 @@ class iHARPExecuter:
             title=dict(
                 text=title,
                 font=dict(size=15, color="black", weight="bold"),
-                x=0.5,
+                x=0.05,
             ),
             xaxis_title=dict(text="Time", font=dict(size=12)),
             yaxis_title=dict(text=ytitle, font=dict(size=12)),
@@ -368,14 +368,14 @@ class iHARPExecuter:
             margin={"r": 10, "t": 40, "b": 15, "l": 50},
             showlegend=True,
             legend=dict(
-                font=dict(size=14),
+                font=dict(size=10),
                 xanchor="right",  # Anchors the legend's x position
                 yanchor="bottom",  # Anchors the legend's y position
                 x=1.14,
                 y=0.7,
             ),
             height=300,  # Adjust the height of the graph
-            width=750,
+            width=600,
         )
 
         # Update x-axis ticks
@@ -552,11 +552,16 @@ class iHARPExecuter:
         # Ensure that 'latitude' and 'longitude' are the coordinate names
         filtered_df = filtered_df.rename(columns={self.variable: "variable"})
         df_sliced_json = filtered_df.head(2000).to_dict("records")
+        # filtered_df.head(2000).to_json(
+        #     "/data/iHARPScripts/reqs.json", orient="records", lines=True
+        # )
+
         df = filtered_df
         df["latitude"] = df["latitude"] - 1
         df["longitude"] = df["longitude"] - 1
         df["latitude2"] = df["latitude"] + 2
         df["longitude2"] = df["longitude"] + 2
+
         gdf = gpd.GeoDataFrame(
             df,
             geometry=[
@@ -566,8 +571,8 @@ class iHARPExecuter:
                 )
             ],
         )
-        color_mapping = {True: "blue", False: "red"}
 
+        color_mapping = {True: "blue", False: "red"}
         fig = px.choropleth_mapbox(
             gdf,
             color_continuous_scale="Viridis",
@@ -581,15 +586,21 @@ class iHARPExecuter:
             zoom=1,
             color_discrete_map=color_mapping,
         )
-        # fig.update_traces(
-        #     hovertemplate="<b>Condition Met:</b> %{customdata[0]}<br><b>Variable:</b> %{customdata[1]}",
-        #     customdata=gdf[
-        #         ["condition_met", "variable"]
-        #     ].values,  # Specify columns for customdata
-        # )
-
         fig.update_layout(
+            # mapbox=[{
+            #     "style": "white-bg",
+            #     "center": {
+            #         "lat": (min_lat + max_lat) / 2,
+            #         "lon": (min_lon + max_lon) / 2,
+            #     },
+            #     "zoom": 4,  # Adjust the zoom level accordingly
+            #     "bounds": [[min_lon, min_lat], [max_lon, max_lat]],
+            # }],
             mapbox_style="white-bg",
+            mapbox_bounds_east=180,
+            mapbox_bounds_north=90,
+            mapbox_bounds_west=-180,
+            mapbox_bounds_south=-90,
             mapbox_layers=[
                 {
                     "below": "traces",
@@ -620,16 +631,12 @@ class iHARPExecuter:
                 yanchor="top",  # Anchors the legend's y position
             ),
         )
-
         fig_json = fig.to_json()
         with open(json_file_path, "w") as f:
             f.write(fig_json)
-        # Read the JSON file
+
         with open(json_file_path, "r") as json_file:
             data = json.load(json_file)
-        # Combine the two JSON objects into one dictionary
-        # df_sliced_json = filtered_df.head(100).to_json(orient="records")
-
         combined_data = {"plotlyData": data, "dfData": df_sliced_json}
         # print(df_sliced_json)
         fig = ""
@@ -747,7 +754,7 @@ class iHARPExecuter:
             margin={"r": 20, "t": 40, "b": 0, "l": 80},
             showlegend=False,
             height=300,
-            width=750,
+            width=550,
         )
         fig.update_xaxes(
             mirror=True,
