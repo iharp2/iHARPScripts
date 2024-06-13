@@ -60,8 +60,6 @@ class iHARPExecuter:
         ) = ("", "", "", "", "", "", "")
         self.frames_directory = os.path.join(self.current_directory, "assets/frames")
         self.min_lat, self.max_lat, self.min_lon, self.max_lon = -90, 90, -180, 180
-        var = random()
-        print(var)
 
     # This function is used in plotting
     def extract_date_time_info(self, start_date_time_str, end_date_time_str):
@@ -207,7 +205,7 @@ class iHARPExecuter:
         image_location = os.path.join(
             self.current_directory, "assets/timeSeriesResult.json"
         )
-        time_units, temps = [], []
+        time_units, temps_min, temps_max, temps_mean = [], [], [], []
         for time_step in raster.time:
             date = time_step.values
             dateTime = str(date)[:13]
@@ -231,16 +229,17 @@ class iHARPExecuter:
 
             xArray = raster[self.variable].sel(time=time_step)
             temperature_data = np.array(xArray.values)
-            if self.time_agg_method == "min":
-                # print("Entered Minimum raw")
-                temp = np.min(temperature_data)
-            elif self.time_agg_method == "max":
-                # print("Entered Maximum raw")
-                temp = np.max(temperature_data)
-            else:
-                temp = np.average(temperature_data)
-
-            temps.append(temp)
+            # if self.time_agg_method == "min":
+            # print("Entered Minimum raw")
+            temp_min = np.min(temperature_data)
+            temps_min.append(temp_min)
+            # elif self.time_agg_method == "max":
+            # print("Entered Maximum raw")
+            temp_max = np.max(temperature_data)
+            temps_max.append(temp_max)
+            # else:
+            temp_mean = np.average(temperature_data)
+            temps_mean.append(temp_mean)
 
         ytitle = str(self.variable_long_name + " [" + self.variable_unit + "]")
         # Naming the xtitle and title of the figure depends on teh time_resolution
@@ -253,11 +252,8 @@ class iHARPExecuter:
                     + str(self.selected_day_end)
                     + ")"
                 )
-            xtitle = self.time_resolution
             title = (
-                self.time_agg_method
-                + " "
-                + str(self.variable_long_name)
+                str(self.variable_long_name)
                 + " Variation "
                 + self.time_resolution
                 + " in "
@@ -269,7 +265,6 @@ class iHARPExecuter:
             )
 
         elif self.time_resolution == "daily":
-            xtitle = "Year-Month-Day"
             if self.selected_month_name_start != self.selected_month_name_end:
                 month_name = (
                     "("
@@ -286,7 +281,6 @@ class iHARPExecuter:
                 + str(year)
             )
         elif self.time_resolution == "monthly":
-            xtitle = "Year-Month"
             if self.selected_year_start != self.selected_year_end:
                 year = (
                     "("
@@ -299,7 +293,7 @@ class iHARPExecuter:
                 year = self.selected_year_start
             title = str(self.variable_long_name) + " Variation Monthly in " + str(year)
         elif self.time_resolution == "yearly":
-            xtitle = "Year"
+            # xtitle = "Year"
             if self.selected_year_start != self.selected_year_end:
                 year = (
                     "("
@@ -312,14 +306,28 @@ class iHARPExecuter:
                 year = self.selected_year_start
             title = str(self.variable_long_name) + " Variation Yearly in " + str(year)
 
-        trace = go.Scatter(
+        trace1 = go.Scatter(
             x=time_units,
-            y=temps,
+            y=temps_min,
             mode="lines+markers",
-            name=self.time_agg_method + " " + self.variable_long_name,
+            name="min",
             marker=dict(symbol="circle"),
         )
-        fig = go.Figure(data=[trace])
+        trace2 = go.Scatter(
+            x=time_units,
+            y=temps_max,
+            mode="lines+markers",
+            name="max",
+            marker=dict(symbol="square"),
+        )
+        trace3 = go.Scatter(
+            x=time_units,
+            y=temps_mean,
+            mode="lines+markers",
+            name="mean",
+            marker=dict(symbol="triangle-up"),
+        )
+        fig = go.Figure(data=[trace1, trace2, trace3])
         fig.update_xaxes(
             mirror=True,
             ticks="outside",
@@ -336,14 +344,14 @@ class iHARPExecuter:
         )
         fig.update_layout(
             plot_bgcolor="white",
-            xaxis_tickformat="%m-%d<br>H:%H",
+            xaxis_tickformat="%Y-%m-%d<br>%H:00",
             # xaxis_rangeslider_visible=True,
             title=dict(
                 text=title,
                 font=dict(size=15, color="black", weight="bold"),
                 x=0.5,
             ),
-            xaxis_title=dict(text=xtitle, font=dict(size=12)),
+            xaxis_title=dict(text="Time", font=dict(size=12)),
             yaxis_title=dict(text=ytitle, font=dict(size=12)),
             modebar_remove=[
                 # "toImage",
@@ -360,9 +368,11 @@ class iHARPExecuter:
             margin={"r": 10, "t": 40, "b": 15, "l": 50},
             showlegend=True,
             legend=dict(
-                font=dict(size=7),
+                font=dict(size=14),
                 xanchor="right",  # Anchors the legend's x position
                 yanchor="bottom",  # Anchors the legend's y position
+                x=1.14,
+                y=0.7,
             ),
             height=300,  # Adjust the height of the graph
             width=750,
@@ -494,6 +504,7 @@ class iHARPExecuter:
         predicate: str,  # e.g., ">", "<", "==", "!=", ">=", "<="
         value: float,
     ) -> xr.Dataset:
+
         json_file_path = os.path.join(self.current_directory, "assets/areasData.json")
         # Assume the surface pressure variable is named 'sp'
         # Dictionary mapping operator strings to their corresponding functions
@@ -646,7 +657,6 @@ class iHARPExecuter:
         op_func = operator_mapping[predicate]
         variable = raster[self.variable]
         mytime = raster.time.values
-        print(mytime)
         if agg_method == "any":
             # Apply the condition across all raster tables
             condition_test = op_func(variable, value)
@@ -656,9 +666,6 @@ class iHARPExecuter:
                 .any(dim=["latitude", "longitude"])
                 .astype(bool)
             )
-            var2 = raster[self.variable].isel(time=0)
-            print(condition_met.values)
-            # print(var2)
         else:
             condition_test = op_func(variable, value)
             condition_met = (
@@ -667,91 +674,47 @@ class iHARPExecuter:
                 .all(dim=["latitude", "longitude"])
                 .astype(bool)
             )
-            var2 = raster[self.variable].isel(time=0)
-        # Create a boolean mask indicating whether each value meets the condition
-        # print(condition_met)
-        # Convert the DataArray and mask to DataFrames
         column_names = ["time"]
 
         time_df = pd.DataFrame(mytime, columns=column_names)
         condition_met_df = condition_met.to_dataframe(
             name="condition_met"
         ).reset_index()
-        # Merge the two DataFrames
         filtered_df = pd.merge(time_df, condition_met_df, on=["time"])
-        print(filtered_df)
-        # Just send to the user the first 1000 values if it's more than this
-        # Ensure that 'latitude' and 'longitude' are the coordinate names
-        # filtered_df = filtered_df.rename(columns={self.variable: "variable"})
         df_sliced_json = filtered_df.head(2000).to_dict("records")
-        # Convert time_series to pandas datetime format
-        time_series = pd.to_datetime(filtered_df["time"])
-        # variable_values = filtered_df["variable"]
         condition_met = filtered_df["condition_met"]
-        # print(time_series)
-        # print(variable_df)
-        # print(condition_met_df)
-        # Create figure
         fig = go.Figure()
-        fig.update_xaxes(
-            mirror=True,
-            ticks="outside",
-            showline=True,
-            linecolor="black",
-            gridcolor="lightgrey",
+        filtered_df["value_numeric"] = filtered_df["condition_met"].astype(int)
+        filtered_df["color"] = filtered_df["condition_met"].apply(
+            lambda x: "blue" if x else "red"
         )
+
+        fig.add_trace(
+            go.Scatter(
+                x=filtered_df["time"],
+                y=filtered_df["value_numeric"],
+                mode="lines+markers",
+                marker=dict(
+                    color=filtered_df["color"],
+                    size=10,  # Adjust marker size as needed
+                    line=dict(width=0.5),  # Adjust marker border width as needed
+                ),
+                line=dict(color="rgba(0, 0, 0, 0.6)"),  # Line color
+                name="Condition Met",
+            )
+        )
+
         fig.update_yaxes(
-            mirror=True,
-            ticks="outside",
-            showline=True,
-            linecolor="black",
-            gridcolor="lightgrey",
-        )
-        # Add condition met bar plot for True
-        fig.add_trace(
-            go.Bar(
-                x=time_series,
-                y=[1 if c else 0 for c in condition_met],  # 1 for True, 0 for False
-                name="Condition (T)",
-                marker=dict(
-                    color="rgba(0, 0, 255, 0.7)"
-                ),  # Light blue color with opacity
-                yaxis="y2",  # Use a secondary y-axis for the bar chart
-                opacity=0.9,  # Set opacity to make bars more opaque
-            )
+            tickvals=[0, 1], ticktext=["False", "True"], title="Condition", side="left"
         )
 
-        # Add condition met bar plot for False
-        fig.add_trace(
-            go.Bar(
-                x=time_series,
-                y=[1 if not c else 0 for c in condition_met],  # 1 for False, 0 for True
-                name="Condition (F)",
-                marker=dict(
-                    color="rgba(255, 0, 0, 0.7)"
-                ),  # Light red color with opacity
-                yaxis="y2",  # Use a secondary y-axis for the bar chart
-                opacity=0.9,  # Set opacity to make bars more opaque
-            )
-        )
-
-        # Add time series line plot
-        # fig.add_trace(
-        #     go.Scatter(
-        #         x=time_series,
-        #         y=variable_values,
-        #         mode="lines+markers",
-        #         name="Var Values",
-        #         marker=dict(
-        #             color="black", opacity=0.8
-        #         ),  # Set color and full opacity for scatter plot
-        #     )
-        # )
+        # Add lines to connect points
+        fig.update_traces(mode="lines+markers")
 
         # Update layout to include secondary y-axis
         fig.update_layout(
             plot_bgcolor="white",
-            xaxis_tickformat="%m-%d<br>H:%H",
+            xaxis_tickformat="%Y-%m-%d<br>%H:00",
             # xaxis_rangeslider_visible=True,
             title=dict(
                 text="Find Times Result",
@@ -759,15 +722,6 @@ class iHARPExecuter:
                 x=0.5,
             ),
             xaxis_title=dict(text="Time", font=dict(size=12)),
-            # yaxis_title=dict(text="Variable Values", font=dict(size=12)),
-            yaxis=dict(
-                title="Condition",
-                overlaying="y",  # Overlay the second y-axis on the same x-axis
-                side="right",  # Display the second y-axis on the right
-                range=[0, 1],  # Limit the range to 0-1 for boolean values
-                tickvals=[0, 1],  # Only show 0 and 1 on the y-axis
-                ticktext=["False", "True"],  # Display text labels for the y-axis
-            ),
             legend=dict(
                 x=0,  # Position legend at the top-left corner
                 y=1.35,
@@ -790,10 +744,24 @@ class iHARPExecuter:
                 # "resetScale",
             ],
             # margin={"r": 10, "t": 40, "b": 15, "l": 50},
-            margin={"r": 70, "t": 40, "b": 0, "l": 50},
-            showlegend=True,
+            margin={"r": 20, "t": 40, "b": 0, "l": 80},
+            showlegend=False,
             height=300,
             width=750,
+        )
+        fig.update_xaxes(
+            mirror=True,
+            ticks="outside",
+            showline=True,
+            linecolor="black",
+            gridcolor="lightgrey",
+        )
+        fig.update_yaxes(
+            mirror=True,
+            ticks="outside",
+            showline=True,
+            linecolor="black",
+            gridcolor="lightgrey",
         )
         fig_json = fig.to_json()
         with open(json_file_path, "w") as f:
@@ -801,10 +769,74 @@ class iHARPExecuter:
         # Read the JSON file
         with open(json_file_path, "r") as json_file:
             data = json.load(json_file)
-        # Combine the two JSON objects into one dictionary
-        # df_sliced_json = filtered_df.head(100).to_json(orient="records")
-
         combined_data = {"plotlyData": data, "dfData": df_sliced_json}
-        # print(df_sliced_json)
         fig = ""
         return combined_data
+
+    def downloadTimesSeries(
+        self,
+        file_path: str,
+        raster: xr.Dataset,
+        downloadOption: str,
+        agg_method: str,  # e.g., "mean", "max", "min"
+        predicate: str,  # e.g., ">", "<", "==", "!=", ">=", "<="
+        value: float,
+    ):
+
+        operator_mapping = {
+            ">": operator.gt,
+            "<": operator.lt,
+            "=": operator.eq,  # Note that in Python, '==' is used for equality check
+            "<=": operator.le,
+            ">=": operator.ge,
+            "!=": operator.ne,
+        }
+        # Aggregate over time dimension
+        op_func = operator_mapping[predicate]
+        variable = raster[self.variable]
+
+        if predicate == "any":
+            print(downloadOption)
+            if downloadOption == "Areas":
+                condition_test = op_func(variable, value)
+                raster["condition_met"] = (
+                    raster.where(condition_test)[self.variable]
+                    .notnull()
+                    .any(dim="time")
+                    .astype(bool)
+                )
+            elif downloadOption == "Timees":
+                condition_test = op_func(variable, value)
+                raster["condition_met"] = (
+                    raster.where(condition_test)[self.variable]
+                    .notnull()
+                    .any(dim=["latitude", "longitude"])
+                    .astype(bool)
+                )
+            else:
+
+                raise ValueError("iHARPV: Please specify data type for download")
+
+        else:
+            if downloadOption == "Areas":
+                condition_test = op_func(variable, value)
+                raster["condition_met"] = (
+                    raster.where(condition_test)[self.variable]
+                    .notnull()
+                    .all(dim="time")
+                    .astype(bool)
+                )
+            elif downloadOption == "Timees":
+                condition_test = op_func(variable, value)
+                raster["condition_met"] = (
+                    raster.where(condition_test)[self.variable]
+                    .notnull()
+                    .all(dim=["latitude", "longitude"])
+                    .astype(bool)
+                )
+            else:
+                raise ValueError("iHARPV: Please specify data type for download")
+
+        # print(raster)
+        raster.to_netcdf(file_path)
+        return
